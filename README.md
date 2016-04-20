@@ -44,6 +44,8 @@ PyAlgoTrade is developed using Python 2.7 and depends on:
  * [ws4py](https://github.com/Lawouach/WebSocket-for-Python) for Bitstamp support.
  * [tornado](http://www.tornadoweb.org/en/stable/) for Bitstamp support.
  * [tweepy](https://github.com/tweepy/tweepy) for Twitter support.
+ * [autobahn](http://autobahn.ws/python/) for Poloniex web services feed support.
+ * [trollius](https://github.com/haypo/trollius) for Poloniex web services feed support.
 
 You can install PyAlgoTrade using pip like this:
 

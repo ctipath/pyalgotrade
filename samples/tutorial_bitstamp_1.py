@@ -1,3 +1,8 @@
+import sys
+sys.path.append("/home/local")
+sys.path.append("..")
+sys.path.append("../..")
+
 from pyalgotrade.bitstamp import barfeed
 from pyalgotrade.bitstamp import broker
 from pyalgotrade import strategy
