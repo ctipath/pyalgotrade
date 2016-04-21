@@ -106,6 +106,7 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
         self.__barDicts = []
         self.registerInstrument(common.INSTRUMENT_TOKEN)
         self.__prevTradeDateTime = None
+        self.__prevTradeDateTimeDupCount = 0
         self.__wsclient = None
         self.__initializationOk = None
         self.__enableReconnection = True
@@ -118,7 +119,7 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
         return wsclient.WebSocketClient()
 
     def getCurrentDateTime(self):
-        return wsclient.get_current_datetime()
+        return datetime.datetime.utcnow()
 
     def enableReconection(self, enableReconnection):
         self.__enableReconnection = enableReconnection
@@ -193,8 +194,11 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
     def __getTradeDateTime(self, trade):
         ret = trade.getDateTime()
         if ret == self.__prevTradeDateTime:
-            ret += datetime.timedelta(microseconds=1)
-        self.__prevTradeDateTime = ret
+            self.__prevTradeDateTimeDupCount += 1
+            ret += datetime.timedelta(microseconds=self.__prevTradeDateTimeDupCount)
+        else:
+            self.__prevTradeDateTime = ret
+            self.__prevTradeDateTimeDupCount = 0
         return ret
 
     def __onTrade(self, trade):
@@ -228,17 +232,12 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
 
     def dispatch(self):
         # Note that we may return True even if we didn't dispatch any Bar event.
-        ret = False
-        if self.__dispatchImpl(None):
-            ret = True
-        if super(LiveTradeFeed, self).dispatch():
-            ret = True
-        return ret
+        dispatchRet = self.__dispatchImpl(None)
+        parentDispatchRet = super(LiveTradeFeed, self).dispatch()
+        return dispatchRet or parentDispatchRet #true if either result is true...
 
     # This should not raise.
     def stop(self):
-        common.logger.info("STOP2")
-        raise Exception("STOP CALLED")
         self.__stopped = True
         self.__wsclient.stop()
 
@@ -247,7 +246,6 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
 
     # This should not raise.
     def join(self):
-        common.logger.info("STOP3")
         if self.__wsclient is not None:
             self.__wsclient.join()
 

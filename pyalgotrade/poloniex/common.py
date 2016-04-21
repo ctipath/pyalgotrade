@@ -22,6 +22,7 @@ import datetime
 import logging
 import pyalgotrade.logger
 from pyalgotrade import broker
+from pyalgotrade.utils import dt
 
 logger = pyalgotrade.logger.getLogger(name="poloniex")
 #logger.setLevel(logging.DEBUG)
@@ -43,7 +44,6 @@ def setPairInfo(cashTokenName, InstrumentTokenName):
     CASH_TOKEN = cashTokenName
     INSTRUMENT_TOKEN = InstrumentTokenName
     CURRENCY_PAIR = "%s_%s" % (CASH_TOKEN, INSTRUMENT_TOKEN)
-
 
 class InstrumentTraits(broker.InstrumentTraits):
     def roundQuantity(self, quantity):

@@ -75,7 +75,7 @@ class WebSocketClientSession(ApplicationSession):
         return self.__queue
 
     def onConnect(self):
-        common.logger.info("Connection established.")
+        common.logger.info("Connection established")
         self.config.extra['client']._setSession(self)
         self.__queue.put((WebSocketClientSession.ON_CONNECTED, None))
         self.join(self.config.realm)
@@ -105,16 +105,16 @@ class WebSocketClientSession(ApplicationSession):
             common.logger.error("Could not subscribe to topic: {}".format(e))
 
     def onLeave(self, details):
-        common.logger.info("Connection left.")
+        common.logger.info("Connection left")
         self.disconnect()
 
     def onDisconnect(self):
-        common.logger.info("Connection disconnected.")
-        asyncio.get_event_loop().stop()
+        common.logger.info("Connection disconnected")
         self.__queue.put((WebSocketClientSession.ON_DISCONNECTED, None))
+        asyncio.get_event_loop().stop()
 
     def stop(self):
-        common.logger.info("Stopping websocket client.")
+        common.logger.info("Stopping websocket client")
         self.disconnect()
 
 class WebSocketClient(threading.Thread):
@@ -133,29 +133,37 @@ class WebSocketClient(threading.Thread):
         return self.__session.getQueue()
 
     def start(self):
+        #def stopEventLoops():
+        #    self.__loop.stop()
+        #    if self.__mainLoop.is_running():
+        #        self.__mainLoop.stop()
+
         assert not self.__session
 
         #hack to avoid txaio double logging...
         import txaio
         txaio.aio._started_logging = True
 
-        import signal
-        self.__mainLoop.add_signal_handler(signal.SIGTERM, self.__mainLoop.stop)
+        #stop the thread's event loop on SIGTERM, so that the application properly terminates on Keyboard abort, etc
+        #import signal
+        #self.__mainLoop.add_signal_handler(signal.SIGTERM, stopEventLoops)
 
         super(WebSocketClient, self).start()
 
     def run(self):
-        def hackedSignalHandler(sig, func):
+        def childEventLoopSigHandler(sig, func):
             raise NotImplementedError
 
         assert not self.__session
         asyncio.set_event_loop(self.__loop)
-        self.__loop.add_signal_handler = hackedSignalHandler
+
+        #hack so that autobahn doesn't try to bind SIGTERM to the thread's event loop (which would generate an exception)
+        self.__loop.add_signal_handler = childEventLoopSigHandler
+
         runner = ApplicationRunner(WEBSOCKET_HOST, WEBSOCKET_REALM, extra={'client': self})
         runner.run(WebSocketClientSession)
 
     def stop(self):
-        common.logger.info("STOP1")
         if not self.__session:
             common.logger.warning("websocket client already stopped...")
             return

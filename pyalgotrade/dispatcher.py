@@ -31,6 +31,7 @@ class Dispatcher(object):
         self.__startEvent = observer.Event()
         self.__idleEvent = observer.Event()
         self.__currDateTime = None
+        self.__gotError = False
 
     # Returns the current event datetime. It may be None for events from realtime subjects.
     def getCurrentDateTime(self):
@@ -108,17 +109,21 @@ class Dispatcher(object):
             while not self.__stop:
                 eof, eventsDispatched = self.__dispatch()
                 if eof:
-                    print("EOF HIT")
                     self.__stop = True
                 elif not eventsDispatched:
                     self.__idleEvent.emit()
                 if self.__stop or eof: print("IN LOOP THRU: stop: %s eof: %s" % ( self.__stop, eof))
-            print("FALL THRU: stop: %s eof: %s" % ( self.__stop, eof))
-        except Exception:
+        except KeyboardInterrupt:
+            pass
+        except:
+            self.__gotError = True
             raise
         finally:
-            print("FINALLY HIT!!! %s" % self.__stop)
-            for subject in self.__subjects:
-                subject.stop()
-            for subject in self.__subjects:
-                subject.join()
+            if not self.__gotError:
+                print "RUNNING WRAPUP"
+                for subject in self.__subjects:
+                    subject.stop()
+                for subject in self.__subjects:
+                    subject.join()
+            else: print "NOT RUNNING WRAPUP"
+
