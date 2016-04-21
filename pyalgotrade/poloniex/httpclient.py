@@ -20,12 +20,11 @@
 import time
 import datetime
 import calendar
-from datetime import datetime
+import logging
 
 from pyalgotrade.utils import dt
 from pyalgotrade.poloniex import common, poloapi
-
-import logging
+import sortedcontainers
 
 
 class AccountBalance(object):
@@ -84,7 +83,7 @@ class Trade(Order):
 class HTTPClient(object):
     def __init__(self, key, secret):
         self.__client = poloapi.poloniex(key, secret)
-        self.__feeDict = self.__client.returnFeeInfo()
+        self.__feeDict = self.__client.returnFeeInfo() if key and secret else None
 
     def getAccountBalance(self):
         jsonResponse = self.__client.returnBalances()
@@ -120,3 +119,22 @@ class HTTPClient(object):
         startTimestamp = calendar.timegm(startDateTime.utctimetuple()) if startDateTime else None
         jsonResponse = self.__client.returnTradeHistory(common.CURRENCY_PAIR, start=startTimestamp)
         return [Trade(json_trade, feeDict=self.__feeDict) for json_trade in jsonResponse]
+
+    def getLiveOrderBook(self):
+        """gets the best 50 entries of the bid and ask book from the exchange"""
+        bidBook, askBook = sortedcontainers.SortedDict(), sortedcontainers.SortedDict()
+        bestBid, bestAsk = None, None
+        orderBook = self.__client.returnOrderBook(common.CURRENCY_PAIR)
+
+        for i in xrange(len(orderBook['bids'])):
+            bid = orderBook['bids'][i]
+            bidBook[float(bid[0])] = float(bid[1])
+            if i == 0:
+                bestBid = float(bid[0])
+        for i in xrange(len(orderBook['asks'])):
+            ask = orderBook['asks'][i]
+            askBook[float(ask[0])] = float(ask[1])
+            if i == 0:
+                bestAsk = float(ask[0])
+
+        return bidBook, askBook, bestBid, bestAsk

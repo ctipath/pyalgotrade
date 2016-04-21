@@ -34,6 +34,13 @@ class poloniex:
             elif(command == "returnOrderBook"):
                 ret = urllib2.urlopen(urllib2.Request('http://poloniex.com/public?command=' + command + '&currencyPair=' + str(req['currencyPair'])))
                 return json.loads(ret.read())
+            elif(command == "returnChartData"):
+                ret = urllib2.urlopen(urllib2.Request('http://poloniex.com/public?command=' + command
+                    + '&currencyPair=' + str(req['currencyPair'])
+                    + '&period=' + str(req['period'])
+                    + '&start=' + str(req['start'] if req['start'] else 0)
+                    + '&end=' + str(req['end'] if req['end'] else 9999999999)))
+                return json.loads(ret.read())
             elif(command == "returnMarketTradeHistory"):
                 ret = urllib2.urlopen(urllib2.Request('http://poloniex.com/public?command=' + "returnTradeHistory" + '&currencyPair=' + str(req['currencyPair'])))
                 return json.loads(ret.read())
@@ -53,14 +60,19 @@ class poloniex:
                 return self.post_process(jsonRet)
 
 
+    ##########
+    ## PUBLIC API
+    ##########
     def returnTicker(self):
         return self.api_query("returnTicker")
 
     def return24Volume(self):
         return self.api_query("return24Volume")
 
-    def returnFeeInfo(self):
-        return self.api_query("returnFeeInfo")
+    def returnChartData(self, currencyPair, period, start_ts=None, end_ts=None):
+        assert period in (300, 900, 1800, 7200, 14400, 86400)
+        return self.api_query("returnChartData",
+            {'currencyPair': currencyPair, 'period': period, 'start': start_ts, 'end': end_ts})
 
     def returnOrderBook (self, currencyPair):
         return self.api_query("returnOrderBook", {'currencyPair': currencyPair})
@@ -68,6 +80,13 @@ class poloniex:
     def returnMarketTradeHistory (self, currencyPair):
         return self.api_query("returnMarketTradeHistory", {'currencyPair': currencyPair})
 
+
+    ##########
+    ## TRADING  API
+    ##########
+    # Returns your current fee levels
+    def returnFeeInfo(self):
+        return self.api_query("returnFeeInfo")
 
     # Returns all of your balances.
     # Outputs: 

@@ -22,11 +22,13 @@
 
 import datetime
 import Queue
-import trollius as asyncio #asyncio is for Python 3+
-from trollius import From
 from os import environ
 import threading
+
+import sortedcontainers
 from autobahn.asyncio.wamp import ApplicationSession, ApplicationRunner
+import trollius as asyncio #asyncio is for Python 3+
+from trollius import From
 
 from pyalgotrade.poloniex import common, httpclient
 
@@ -35,6 +37,43 @@ WEBSOCKET_REALM = u"realm1"
 
 class Trade(httpclient.Trade):
     pass
+
+class TickerUpdate(object):
+    def __init__(self, jsonList):
+        self._jsonList = jsonList
+
+    def getList(self):
+        return self._jsonList
+
+    def getCurrencyPair(self):
+        return self._jsonList[0]
+
+    def getLastPrice(self):
+        return self._jsonList[1]
+
+    def getLowestAsk(self):
+        return self._jsonList[2]
+
+    def getHighestBid(self):
+        return self._jsonList[3]
+
+    def getPercentChange(self):
+        return self._jsonList[4]
+
+    def getBaseVolume(self):
+        return self._jsonList[5]
+
+    def getQuoteVolume(self):
+        return self._jsonList[6]
+
+    def getIsFrozen(self):
+        return self._jsonList[7]
+
+    def get24HourHigh(self):
+        return self._jsonList[8]
+
+    def get24HourLow(self):
+        return self._jsonList[9]
 
 class OrderBookRemoval(object):
     def __init__(self, jsonDict):
@@ -60,15 +99,20 @@ class OrderBookModification(OrderBookRemoval):
         return float(self._jsonDict["amount"])
 
 class WebSocketClientSession(ApplicationSession):
+    BACKLOG_MAX_SIZE = 50 #after this, the entry holding things up will be skipped...
+
     # Events
-    ON_TRADE = 1
-    ON_ORDER_BOOK_MODIFY = 2
-    ON_ORDER_BOOK_REMOVE = 3
-    ON_CONNECTED = 4
-    ON_DISCONNECTED = 5
+    ON_TICKER_UPDATE = 1
+    ON_TRADE = 2
+    ON_ORDER_BOOK_MODIFY = 3
+    ON_ORDER_BOOK_REMOVE = 4
+    ON_CONNECTED = 5
+    ON_DISCONNECTED = 6
 
     def __init__(self, *args, **kwargs):
         self.__queue = Queue.Queue()
+        self.__lastSeq = None
+        self.__seqBacklog = sortedcontainers.SortedDict()
         super(WebSocketClientSession, self).__init__(*args, **kwargs)
 
     def getQueue(self):
@@ -83,23 +127,70 @@ class WebSocketClientSession(ApplicationSession):
     @asyncio.coroutine
     def onJoin(self, details):
 
-        def onTicker(*event):
+        def onTickerUpdate(*event):
+            tickerUpdate = TickerUpdate(event)
+            if tickerUpdate.getCurrencyPair() != common.CURRENCY_PAIR:
+                return #skip as it's not for the currency pair we're monitoring
+
             common.logger.debug("TICKER: {}".format(event))
+            self.__queue.put((WebSocketClientSession.ON_TICKER_UPDATE, tickerUpdate))
 
         def onOrderBookAndTrades(*events, **kwargs):
-            for event in events:
-                if event['type'] == u'orderBookModify':
-                    common.logger.debug("OBOOK-MODIFY({}): {}".format(kwargs['seq'], event['data']))
-                    self.__queue.put((WebSocketClientSession.ON_ORDER_BOOK_MODIFY, OrderBookModification(event['data'])))
-                elif event['type'] == u'orderBookRemove':
-                    common.logger.debug("OBOOK-REMOVE({}): {}".format(kwargs['seq'], event['data']))
-                    self.__queue.put((WebSocketClientSession.ON_ORDER_BOOK_REMOVE, OrderBookRemoval(event['data'])))
-                else:
-                    assert event['type'] == 'newTrade'
-                    common.logger.debug("TRADE({}): {}".format(kwargs['seq'], event['data']))
-                    self.__queue.put((WebSocketClientSession.ON_TRADE, Trade(event['data'])))
+            def dispatchEventsInMessage(seq, events):
+                for event in events:
+                    if event['type'] == u'orderBookModify':
+                        common.logger.debug("OBOOK-MODIFY({}): {}".format(seq, event['data']))
+                        self.__queue.put((WebSocketClientSession.ON_ORDER_BOOK_MODIFY, OrderBookModification(event['data'])))
+                    elif event['type'] == u'orderBookRemove':
+                        common.logger.debug("OBOOK-REMOVE({}): {}".format(seq, event['data']))
+                        self.__queue.put((WebSocketClientSession.ON_ORDER_BOOK_REMOVE, OrderBookRemoval(event['data'])))
+                    else:
+                        assert event['type'] == 'newTrade'
+                        common.logger.debug("TRADE({}): {}".format(seq, event['data']))
+                        self.__queue.put((WebSocketClientSession.ON_TRADE, Trade(event['data'])))
+
+            def dispatchOrBacklogMessage(seq, events):
+                if self.__lastSeq:
+                    if seq < self.__lastSeq: #older message, discard
+                        common.logger.debug("Discarding event sequence ID {} as < lastSeq {}".format(seq, self.__lastSeq))
+                        return True
+                    elif seq == self.__lastSeq + 1: #in order, process
+                        dispatchEventsInMessage(seq, events)
+                        self.__lastSeq += 1
+                        return True
+                    else: #came out of order. backlog it until the earlier message comes
+                        if seq in self.__seqBacklog:
+                            common.logger.debug("Sequence {} exists in backlog. Replacing...".format(seq))
+                        else:
+                            common.logger.debug("Backlogging sequence {} ({} events, waiting for seq {} first...)".format(
+                                seq, len(events), self.__lastSeq + 1))
+                        self.__seqBacklog[seq] = events #replace if exists already
+
+                        if len(self.__seqBacklog) == WebSocketClientSession.BACKLOG_MAX_SIZE:
+                            common.logger.info("Backlog has reached its max size of {} waiting for seq {}. Skipping it and catching up".format(
+                                WebSocketClientSession.BACKLOG_MAX_SIZE, self.__lastSeq + 1))
+                            self.__lastSeq += 1
+                            return True
+                        else:
+                            return False
+                else: #first message on connection, go from here...
+                    common.logger.debug("Setting backlog sequence start as {}".format(seq))
+                    self.__lastSeq = seq
+                    dispatchEventsInMessage(seq, events)
+                    return True
+
+            assert kwargs['seq']
+            if dispatchOrBacklogMessage(kwargs['seq'], events):
+                while len(self.__seqBacklog): #clear out as much of our seqBacklog as possible...
+                    nextSeq = iter(self.__seqBacklog).next()
+                    if dispatchOrBacklogMessage(nextSeq, self.__seqBacklog[nextSeq]):
+                        common.logger.debug("Cleared seq {} from backlog".format(nextSeq))
+                        del self.__seqBacklog[nextSeq] #loop and start working on the next backlog entry, if present...
+                    else:
+                        break #can't process further for now
+
         try:
-            yield From(self.subscribe(onTicker, 'ticker'))
+            yield From(self.subscribe(onTickerUpdate, 'ticker'))
             yield From(self.subscribe(onOrderBookAndTrades, common.CURRENCY_PAIR))
         except Exception as e:
             common.logger.error("Could not subscribe to topic: {}".format(e))

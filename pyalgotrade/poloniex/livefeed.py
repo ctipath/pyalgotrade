@@ -111,6 +111,7 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
         self.__initializationOk = None
         self.__enableReconnection = True
         self.__stopped = False
+        self.__tickerUpdateEvent = observer.Event()
         self.__orderBookModificationEvent = observer.Event()
         self.__orderBookRemovalEvent = observer.Event()
 
@@ -173,7 +174,9 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
                 return False
 
             ret = True
-            if eventType == wsclient.WebSocketClientSession.ON_TRADE:
+            if eventType == wsclient.WebSocketClientSession.ON_TICKER_UPDATE:
+                self.__tickerUpdateEvent.emit(eventData)
+            elif eventType == wsclient.WebSocketClientSession.ON_TRADE:
                 self.__onTrade(eventData)
             elif eventType == wsclient.WebSocketClientSession.ON_ORDER_BOOK_MODIFY:
                 self.__orderBookModificationEvent.emit(eventData)
@@ -193,6 +196,7 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
     # Bar datetimes should not duplicate. In case trade object datetimes conflict, we just move one slightly forward.
     def __getTradeDateTime(self, trade):
         ret = trade.getDateTime()
+        oldRet = ret
         if ret == self.__prevTradeDateTime:
             self.__prevTradeDateTimeDupCount += 1
             ret += datetime.timedelta(microseconds=self.__prevTradeDateTimeDupCount)
@@ -248,6 +252,17 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
     def join(self):
         if self.__wsclient is not None:
             self.__wsclient.join()
+
+    def getTickerUpdateEvent(self):
+        """
+        Returns the event that will be emitted when the ticker is updated for the chosen currency pair.
+
+        Eventh handlers should receive one parameter:
+         1. A :class:`pyalgotrade.poloniex.wsclient.TickerUpdate` instance.
+
+        :rtype: :class:`pyalgotrade.observer.Event`.
+        """
+        return self.__tickerUpdateEvent
 
     def getOrderBookModificationEvent(self):
         """

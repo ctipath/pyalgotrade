@@ -154,10 +154,11 @@ class LiveBroker(broker.Broker):
         common.logger.info("Retrieving account balance.")
         balance = self.__httpClient.getAccountBalance()
 
-        # Cash
+        #Cash
         self.__cash = round(balance.getCashTokenAvailable(), common.CASH_TOKEN_PRECISION)
         common.logger.info("%s %s" % (self.__cash, common.CASH_TOKEN))
-        # BTC
+
+        #Instrument
         qtyInstToken = balance.getInstrumentTokenAvailable()
         if qtyInstToken:
             self.__shares = {common.INSTRUMENT_TOKEN: qtyInstToken}

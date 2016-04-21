@@ -25,13 +25,13 @@ from pyalgotrade import broker
 from pyalgotrade.utils import dt
 
 logger = pyalgotrade.logger.getLogger(name="poloniex")
-#logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 CASH_TOKEN = None #must set via setPairInfo()
 INSTRUMENT_TOKEN = None #must set via setPairInfo()
 CURRENCY_PAIR = None #must set via setPairInfo()
 
-MIN_TRADE_CASH_TOKEN = 0.01147 #about $5 in BTC
+MIN_TRADE_CASH_TOKEN = 0.001147 #about $.50 in BTC
 
 CASH_TOKEN_PRECISION = 8 #if cash token is USD, we may have to set this to 2...
 INSTRUMENT_TOKEN_PRECISION = 8

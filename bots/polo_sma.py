@@ -5,50 +5,36 @@ sys.path.append("..")
 sys.path.append("../..")
 import traceback
 
-from pyalgotrade.poloniex import barfeed, broker, common, poloapi
+from pyalgotrade.poloniex import barfeed, broker, common, httpclient
 from pyalgotrade import strategy
 from pyalgotrade.technical import ma
 from pyalgotrade.technical import cross
-from sortedcontainers import SortedDict
+import sortedcontainers
 
 INSTRUMENT_TOKEN = "ETH"
 CASH_TOKEN = "BTC"
 
 class Strategy(strategy.BaseStrategy):
-    def __init__(self, feed, brk):
+    def __init__(self, feed, brk, live=False):
         super(Strategy, self).__init__(feed, brk)
-        self.__bidBook = SortedDict()
-        self.__askBook = SortedDict()
-        smaPeriod = 20
+        self.__httpClient = httpclient.HTTPClient(None, None) #no key and secret for now...
         self.__prices = feed[INSTRUMENT_TOKEN].getCloseDataSeries()
+        smaPeriod = 20
         self.__sma = ma.SMA(self.__prices, smaPeriod)
+        self.__bidBook = sortedcontainers.SortedDict()
+        self.__askBook = sortedcontainers.SortedDict()
         self.__bid = None
         self.__ask = None
         self.__position = None
         self.__posSize = 50
-        self.__noAuthHTTPClient = poloapi.poloniex(None, None)
 
-        #initially populate orderbook
-        self.__populateOrderBookInitially()
+        if live:
+            #initially populate orderbook from the exchange...
+            self.__bidBook, self.__askBook, self.__bid, self.__ask = self.__httpClient.getLiveOrderBook()
 
         # Subscribe to order book update events to get bid/ask prices to trade.
         feed.getOrderBookModificationEvent().subscribe(self.__onOrderBookModification)
         feed.getOrderBookRemovalEvent().subscribe(self.__onOrderBookRemoval)
-
-    def __populateOrderBookInitially(self):
-        orderBook = self.__noAuthHTTPClient.returnOrderBook(common.CURRENCY_PAIR)
-        for i in xrange(len(orderBook['bids'])):
-            bid = orderBook['bids'][i]
-            self.__bidBook[float(bid[0])] = float(bid[1])
-            if i == 0:
-                self.__bid = float(bid[0])
-        for i in xrange(len(orderBook['asks'])):
-            ask = orderBook['asks'][i]
-            self.__askBook[float(ask[0])] = float(ask[1])
-            if i == 0:
-                self.__ask = float(ask[0])
-        common.logger.info("Orderbook initially populated. %s bids (best: %s), %s asks (best: %s)" % (
-            len(self.__bidBook), reversed(self.__bidBook).next(), len(self.__askBook), iter(self.__askBook).next()))
 
     def __replaceBestOrder(self, orderBookModificationOrRemoval):
         if orderBookModificationOrRemoval.isBid():
@@ -107,17 +93,20 @@ class Strategy(strategy.BaseStrategy):
             self.info("Exit signal. Sell at %s" % (self.__bid))
             self.__position.exitLimit(self.__bid)
 
-
 def main():
     #def log_uncaught_exceptions(ex_cls, ex, tb):
     #    common.logger.critical(''.join(traceback.format_tb(tb)))
     #    common.logger.critical('{0}: {1}'.format(ex_cls, ex))
     #sys.excepthook = log_uncaught_exceptions
 
-    common.setPairInfo(CASH_TOKEN, INSTRUMENT_TOKEN)
-    barFeed = barfeed.LiveTradeFeed()
-    brk = broker.PaperTradingBroker(1000, barFeed)
-    strat = Strategy(barFeed, brk)
+    mode = 'live'
+    if mode == 'live':
+        common.setPairInfo(CASH_TOKEN, INSTRUMENT_TOKEN)
+        barFeed = barfeed.LiveTradeFeed()
+        brk = broker.PaperTradingBroker(1000, barFeed)
+        strat = Strategy(barFeed, brk, live=True)
+    else:
+        raise NotImplementedError
 
     strat.run()
 
