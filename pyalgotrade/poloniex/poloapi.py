@@ -94,6 +94,9 @@ class poloniex:
     def returnBalances(self):
         return self.api_query('returnBalances')
 
+    def returnCompleteBalances(self):
+        return self.api_query('returnCompleteBalances')
+
     # Returns your open orders for a given market, specified by the "currencyPair" POST parameter, e.g. "BTC_XCP"
     # Inputs:
     # currencyPair  The currency pair e.g. "BTC_XCP"

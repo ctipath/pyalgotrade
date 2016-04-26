@@ -77,8 +77,13 @@ class BacktestingBroker(backtesting.Broker):
         elif action == broker.Order.Action.SELL_SHORT:
             action = broker.Order.Action.SELL
 
+        #if limitPrice * quantity < common.MIN_TRADE_CASH_TOKEN:
+        #    raise Exception("Trade must be >= {} {}, but instead is {:.8f} {}".format(
+        #        common.MIN_TRADE_CASH_TOKEN, common.CASH_TOKEN,
+        #        round(limitPrice * quantity, common.CASH_TOKEN_PRECISION), common.CASH_TOKEN))
         if limitPrice * quantity < common.MIN_TRADE_CASH_TOKEN:
-            raise Exception("Trade must be >= %s %s" % (common.MIN_TRADE_CASH_TOKEN, common.CASH_TOKEN))
+            common.logger.warn("Small order placed: {} {} at {} for proceeds of {:.8f} {}".format(
+                quantity, common.INSTRUMENT_TOKEN, limitPrice, limitPrice * quantity, common.CASH_TOKEN))
 
         if action == broker.Order.Action.BUY:
             # Check that there is enough cash.
